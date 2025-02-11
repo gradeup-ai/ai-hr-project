@@ -60,3 +60,7 @@ def synthesize(text: str):
         return {"audio": speech_audio}
     else:
         raise HTTPException(status_code=500, detail="Ошибка генерации речи")
+        @app.get("/")
+def home():
+    return {"message": "AI-HR API работает!"}
+
