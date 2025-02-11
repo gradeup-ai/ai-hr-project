@@ -93,7 +93,7 @@ candidates_db[interview_id] = {
 save_candidates()
 
 
-    send_email(candidate.email, interview_link)
+send_email(candidate.email, interview_link)
 
     return {"message": "Кандидат зарегистрирован!", "interview_link": interview_link}
 
