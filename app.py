@@ -7,26 +7,36 @@ from pydantic import BaseModel
 from deepgram import Deepgram
 import aiohttp
 import requests
+from openai import OpenAI
 
 app = FastAPI()
 
-# Фейковая база данных кандидатов (в будущем заменим на реальную БД)
-candidates_db = {}
+# 1️⃣ Переменные окружения
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.yandex.ru")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
-# 1️⃣ Модель данных для регистрации кандидата
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# 2️⃣ База данных кандидатов (в будущем заменим на реальную БД)
+candidates_db = {}
+interviews = {}
+
+# 3️⃣ Модель данных кандидата
 class Candidate(BaseModel):
     name: str
     email: str
     phone: str
     gender: str
 
-# 2️⃣ Функция для отправки email через SMTP Яндекса
+# 4️⃣ Функция отправки email через Яндекс
 def send_email(to_email, interview_link):
-    SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.yandex.ru")
-    SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-    SMTP_USER = os.getenv("SMTP_USER")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-
     if not SMTP_SERVER or not SMTP_USER or not SMTP_PASSWORD:
         raise HTTPException(status_code=500, detail="Ошибка: SMTP-настройки не заданы!")
 
@@ -39,21 +49,19 @@ def send_email(to_email, interview_link):
     msg["To"] = to_email
 
     try:
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)  # Используем SSL
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.sendmail(SMTP_USER, to_email, msg.as_string())
         server.quit()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка отправки email: {str(e)}")
 
-# 3️⃣ API для регистрации кандидата
+# 5️⃣ API для регистрации кандидата
 @app.post("/register/")
 def register(candidate: Candidate):
-    # Генерируем уникальный идентификатор интервью
     interview_id = str(uuid.uuid4())
     interview_link = f"https://ai-hr-project.onrender.com/interview/{interview_id}"
 
-    # Сохраняем кандидата в "базу данных"
     candidates_db[interview_id] = {
         "name": candidate.name,
         "email": candidate.email,
@@ -62,14 +70,30 @@ def register(candidate: Candidate):
         "interview_link": interview_link
     }
 
-    # Отправляем email кандидату
     send_email(candidate.email, interview_link)
 
     return {"message": "Кандидат зарегистрирован!", "interview_link": interview_link}
 
-# 4️⃣ API для обработки аудио кандидата (Deepgram STT)
-DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+# 6️⃣ API для начала интервью
+@app.get("/interview/{interview_id}")
+def start_interview(interview_id: str):
+    if interview_id not in candidates_db:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+    
+    candidate = candidates_db[interview_id]
+    interviews[interview_id] = {
+        "candidate": candidate,
+        "questions": [],
+        "answers": [],
+        "status": "in_progress"
+    }
+    
+    first_question = "Привет! Я Эмили, ваш виртуальный HR. Расскажите о своём опыте работы."
+    interviews[interview_id]["questions"].append(first_question)
 
+    return {"message": "Интервью началось", "question": first_question}
+
+# 7️⃣ API для получения ответа кандидата (Deepgram STT)
 async def transcribe_audio(audio_url: str):
     if not DEEPGRAM_API_KEY:
         raise HTTPException(status_code=500, detail="Deepgram API key отсутствует!")
@@ -82,47 +106,109 @@ async def transcribe_audio(audio_url: str):
         )
         return response["results"]["channels"][0]["alternatives"][0]["transcript"]
 
-@app.post("/transcribe/")
-async def transcribe(audio_url: str):
-    try:
-        transcript = await transcribe_audio(audio_url)
-        return {"transcription": transcript}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# 5️⃣ API для генерации речи AI-HR (ElevenLabs TTS)
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
-
-def generate_speech(text):
-    if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
-        raise HTTPException(status_code=500, detail="ElevenLabs API key или Voice ID отсутствуют!")
-
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-    headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-    }
-    data = {
-        "text": text,
-        "voice_settings": {"stability": 0.75, "similarity_boost": 0.9}
-    }
-    response = requests.post(url, json=data, headers=headers)
+@app.post("/interview/{interview_id}/answer")
+async def process_answer(interview_id: str, audio_url: str):
+    if interview_id not in interviews:
+        raise HTTPException(status_code=404, detail="Интервью не найдено")
     
-    if response.status_code == 200:
-        return response.content
-    else:
-        return None
+    transcript = await transcribe_audio(audio_url)
+    interviews[interview_id]["answers"].append(transcript)
 
-@app.post("/synthesize/")
-def synthesize(text: str):
-    speech_audio = generate_speech(text)
-    if speech_audio:
-        return {"audio": speech_audio}
-    else:
-        raise HTTPException(status_code=500, detail="Ошибка генерации речи")
+    question = generate_next_question(interview_id, transcript)
+    interviews[interview_id]["questions"].append(question)
 
-# 6️⃣ API для проверки работоспособности сервера
+    return {"question": question}
+
+# 8️⃣ Функция генерации следующего вопроса (GPT-4o)
+def generate_next_question(interview_id, last_answer):
+    candidate = interviews[interview_id]["candidate"]
+
+    prompt = f"""
+Ты – AI-HR Эмили. Ты проводишь интервью с кандидатом {candidate['name']} на вакансию.
+Твоя цель – объективно оценить его Hard и Soft Skills, анализируя его ответы.
+
+1. Оцени его понимание **ключевых технических навыков** (Hard Skills), связанных с вакансией.
+2. Проверяй **Soft Skills**: умение излагать мысли, аналитическое мышление, стрессоустойчивость, адаптивность.
+3. Генерируй следующий вопрос на основе его ответа, углубляя оценку навыков.
+4. Не давай подсказки. Собеседование должно проходить как реальный живой диалог.
+
+Кандидат ответил: "{last_answer}".  
+Какой будет следующий вопрос для глубокой оценки его квалификации?
+"""
+
+
+    response = client.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "system", "content": "Ты – AI-HR, оцениваешь кандидата."},
+                  {"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message["content"]
+
+# 9️⃣ API для завершения интервью и отчёта
+@app.post("/interview/{interview_id}/finish")
+def finish_interview(interview_id: str):
+    if interview_id not in interviews:
+        raise HTTPException(status_code=404, detail="Интервью не найдено")
+
+    report = generate_report(interview_id)
+    interviews[interview_id]["status"] = "finished"
+
+    return {"message": "Интервью завершено", "report": report}
+
+# 🔟 Функция генерации отчёта (GPT-4o)
+def generate_report(interview_id):
+    candidate = interviews[interview_id]["candidate"]
+    questions = interviews[interview_id]["questions"]
+    answers = interviews[interview_id]["answers"]
+
+    prompt = f"""
+Сгенерируй **детальный отчёт** по собеседованию с кандидатом {candidate['name']}.
+
+📌 **1. Основные данные кандидата**
+- Имя: {candidate['name']}
+- Email: {candidate['email']}
+- Телефон: {candidate['phone']}
+- Пол: {candidate['gender']}
+
+📌 **2. Вопросы и ответы**  
+**Вопросы** {questions}  
+**Ответы** {answers}  
+
+📌 **3. Оценка Hard Skills (Технические навыки)**  
+- Определи ключевые технические навыки, требуемые для вакансии.
+- Оцени уровень знаний по **5-балльной шкале** с детальным анализом.  
+- Дай примеры из интервью, подтверждающие уровень владения каждым навыком.
+
+📌 **4. Оценка Soft Skills (Личностные качества)**  
+- Коммуникация: оцени, насколько ясно кандидат выражает мысли и взаимодействует.  
+- Аналитическое мышление: оцени глубину анализа задач.  
+- Стрессоустойчивость: как кандидат реагирует на сложные вопросы.  
+- Самостоятельность: способен ли он решать задачи без чётких инструкций.  
+- Готовность к обучению: как он адаптируется к новым темам.
+
+📌 **5. Анализ эмоций и речи (Emotion AI)**  
+- Определи **доминирующее настроение** кандидата: спокойный, уверенный, нервозный, агрессивный.  
+- Как менялись его **эмоции в ходе собеседования**?  
+- Реакция на сложные вопросы: были ли признаки волнения, раздражения, неуверенности?  
+- Проанализируй **темп, громкость, паузы в речи** и как это влияет на восприятие.  
+
+📌 **6. Итоговый вердикт AI-HR**  
+- Подходит ли кандидат? **Да / Нет** (аргументированный вывод).  
+- Сильные стороны кандидата.  
+- Зоны роста и рекомендации.  
+"""
+
+
+    response = client.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "system", "content": "Ты – AI-HR, создаёшь отчёт после интервью."},
+                  {"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message["content"]
+
+# 1️⃣1️⃣ API для проверки сервера
 @app.get("/")
 def home():
     return {"message": "AI-HR API работает!"}
