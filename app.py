@@ -25,26 +25,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # 2️⃣ База данных кандидатов (в будущем заменим на реальную БД)
-import json
-
-# Файл для хранения данных
-CANDIDATES_FILE = "candidates.json"
-
-# Функция загрузки данных из файла
-def load_candidates():
-    try:
-        with open(CANDIDATES_FILE, "r", encoding="utf-8") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {}
-
-# Функция сохранения данных в файл
-def save_candidates():
-    with open(CANDIDATES_FILE, "w", encoding="utf-8") as file:
-        json.dump(candidates_db, file, indent=4, ensure_ascii=False)
-
-# Загружаем кандидатов при старте
-candidates_db = load_candidates()
+candidates_db = {}
 interviews = {}
 
 # 3️⃣ Модель данных кандидата
@@ -81,19 +62,15 @@ def register(candidate: Candidate):
     interview_id = str(uuid.uuid4())
     interview_link = f"https://ai-hr-project.onrender.com/interview/{interview_id}"
 
-candidates_db[interview_id] = {
-    "name": candidate.name,
-    "email": candidate.email,
-    "phone": candidate.phone,
-    "gender": candidate.gender,
-    "interview_link": interview_link
-}
+    candidates_db[interview_id] = {
+        "name": candidate.name,
+        "email": candidate.email,
+        "phone": candidate.phone,
+        "gender": candidate.gender,
+        "interview_link": interview_link
+    }
 
-# Сохраняем кандидатов в файл после регистрации
-save_candidates()
-
-
-send_email(candidate.email, interview_link)
+    send_email(candidate.email, interview_link)
 
     return {"message": "Кандидат зарегистрирован!", "interview_link": interview_link}
 
