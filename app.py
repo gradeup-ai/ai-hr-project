@@ -1,6 +1,7 @@
 import os
 import smtplib
 import uuid
+
 from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -8,6 +9,39 @@ from deepgram import Deepgram
 import aiohttp
 import requests
 from openai import OpenAI
+from sqlalchemy import create_engine, Column, String, Integer, ForeignKey, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+DATABASE_URL = os.getenv("DATABASE_URL")  # URL для PostgreSQL на Render
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
+
+# Определяем таблицы
+class CandidateDB(Base):
+    __tablename__ = "candidates"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    gender = Column(String, nullable=False)
+    interview_link = Column(String, nullable=False)
+
+class InterviewDB(Base):
+    __tablename__ = "interviews"
+    
+    id = Column(String, primary_key=True, index=True)
+    candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
+    status = Column(String, default="in_progress")
+    questions = Column(Text)
+    answers = Column(Text)
+    report = Column(Text)
+
+# Создаём таблицы
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -59,18 +93,22 @@ def send_email(to_email, interview_link):
 # 5️⃣ API для регистрации кандидата
 @app.post("/register/")
 def register(candidate: Candidate):
+    session = SessionLocal()
     interview_id = str(uuid.uuid4())
     interview_link = f"https://ai-hr-project.onrender.com/interview/{interview_id}"
 
-    candidates_db[interview_id] = {
-        "name": candidate.name,
-        "email": candidate.email,
-        "phone": candidate.phone,
-        "gender": candidate.gender,
-        "interview_link": interview_link
-    }
+    new_candidate = CandidateDB(
+        id=interview_id,
+        name=candidate.name,
+        email=candidate.email,
+        phone=candidate.phone,
+        gender=candidate.gender,
+        interview_link=interview_link
+    )
 
-    send_email(candidate.email, interview_link)
+    session.add(new_candidate)
+    session.commit()
+    session.close()
 
     return {"message": "Кандидат зарегистрирован!", "interview_link": interview_link}
 
@@ -88,10 +126,27 @@ def start_interview(interview_id: str):
         "status": "in_progress"
     }
     
-    first_question = "Привет! Я Эмили, ваш виртуальный HR. Расскажите о своём опыте работы."
+    first_question = "Привет! Я Эмили, ваш виртуальный HR. Мы сейчас проведём интервью на позицию {job_title} ({job_level}) в компанию ВД КОМ. Я буду задавать вам вопросы, чтобы оценить ваши профессиональные навыки и личностные качества. Отвечайте подробно и искренне. Если что-то будет неясно – просто уточните у меня! Начнём с простого: расскажите о себе и вашем опыте работы."
     interviews[interview_id]["questions"].append(first_question)
 
     return {"message": "Интервью началось", "question": first_question}
+
+@app.get("/livekit/{interview_id}")
+def create_livekit_session(interview_id: str):
+    session = SessionLocal()
+    candidate = session.query(CandidateDB).filter(CandidateDB.id == interview_id).first()
+    session.close()
+
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    headers = {"Authorization": f"Bearer {LIVEKIT_API_KEY}"}
+    response = requests.post("https://api.livekit.io/room", headers=headers, json={"name": interview_id})
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Ошибка создания сессии LiveKit")
+
+    return response.json()
 
 # 7️⃣ API для получения ответа кандидата (Deepgram STT)
 async def transcribe_audio(audio_url: str):
@@ -124,13 +179,24 @@ def generate_next_question(interview_id, last_answer):
     candidate = interviews[interview_id]["candidate"]
 
     prompt = f"""
-Ты – AI-HR Эмили. Ты проводишь интервью с кандидатом {candidate['name']} на вакансию.
-Твоя цель – объективно оценить его Hard и Soft Skills, анализируя его ответы.
+Ты – AI-HR Эмили. Ты проводишь интервью с кандидатом {candidate['name']} на вакансию {job_title} ({job_level}) в компанию ВД КОМ.
+Твоя цель – объективно оценить его Hard и Soft Skills, анализируя его ответы.Твоя задача – провести структурированное интервью, анализируя не только ответы кандидата, но и его голос, эмоции, стрессоустойчивость и невербальные сигналы.
 
 1. Оцени его понимание **ключевых технических навыков** (Hard Skills), связанных с вакансией.
-2. Проверяй **Soft Skills**: умение излагать мысли, аналитическое мышление, стрессоустойчивость, адаптивность.
+2. Проверяй **Soft Skills**: умение излагать мысли, аналитическое мышление - глубина анализа задач, стрессоустойчивость - реакция на сложные вопросы, адаптивность.
 3. Генерируй следующий вопрос на основе его ответа, углубляя оценку навыков.
 4. Не давай подсказки. Собеседование должно проходить как реальный живой диалог.
+5. Интервью длится максимум 60 минут, ты можешь немного поторопить кандидата, если он затягивает ответы.
+6. Сохраняй естественный стиль диалога, не превращай интервью в анкету.
+Ты ведешь диалог в формате живого собеседования, не давая подсказок кандидату. Ты должен адаптировать тон и ритм вопросов в зависимости от состояния кандидата.
+
+Голосовые и поведенческие параметры AI-рекрутера
+
+✅ Стиль общения – дружелюбный, но формальный.
+✅ Тон голоса – профессиональный, уверенный, энергичный.
+✅ Скорость речи – средняя (не торопливая, но четкая).
+✅ Интонация – вариативная, подчеркивающая важные моменты.
+✅ Адаптация к эмоциям кандидата – если нервничает, успокаивать; если уверен, вести стандартное интервью
 
 Кандидат ответил: "{last_answer}".  
 Какой будет следующий вопрос для глубокой оценки его квалификации?
@@ -148,13 +214,20 @@ def generate_next_question(interview_id, last_answer):
 # 9️⃣ API для завершения интервью и отчёта
 @app.post("/interview/{interview_id}/finish")
 def finish_interview(interview_id: str):
-    if interview_id not in interviews:
+    session = SessionLocal()
+    interview = session.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
+
+    if not interview:
         raise HTTPException(status_code=404, detail="Интервью не найдено")
 
-    report = generate_report(interview_id)
-    interviews[interview_id]["status"] = "finished"
+    sheet = connect_google_sheets()
+    sheet.append_row([interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, interview.report])
 
-    return {"message": "Интервью завершено", "report": report}
+    interview.status = "completed"
+    session.commit()
+    session.close()
+
+    return {"message": "Интервью завершено, отчёт сохранён"}
 
 # 🔟 Функция генерации отчёта (GPT-4o)
 def generate_report(interview_id):
