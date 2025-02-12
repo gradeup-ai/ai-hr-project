@@ -45,7 +45,14 @@ def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_candidate)
 
-    return new_candidate
+    return CandidateResponse(
+        id=new_candidate.id,
+        name=new_candidate.name,
+        email=new_candidate.email,
+        phone=new_candidate.phone,
+        gender=new_candidate.gender,
+        interview_link=new_candidate.interview_link
+    )
 
 
 # 📺 2️⃣ **Начало интервью**
@@ -73,7 +80,14 @@ def start_interview(interview_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(interview)
 
-    return interview
+    return InterviewResponse(
+        id=interview.id,
+        candidate_id=interview.candidate_id,
+        status=interview.status,
+        questions=interview.questions,
+        answers=interview.answers,
+        report=interview.report
+    )
 
 # 📺 3️⃣ **Распознавание речи и анализ ответа**
 async def transcribe_audio(audio_url: str):
@@ -124,18 +138,13 @@ def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     if not interview:
         raise HTTPException(status_code=404, detail="Интервью не найдено")
 
-    # Генерация отчёта AI-HR
     report = generate_report(interview_id)
     interview.report = report
     interview.status = "completed"
     db.commit()
     db.refresh(interview)
 
-    # Сохранение данных в Google Sheets
-    save_interview_to_google_sheets(
-        interview.id, interview.candidate_id, interview.status,
-        interview.questions, interview.answers, report, interview.video_url
-    )
+    save_interview_to_google_sheets(interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, report, interview.video_url)
 
     return {"message": "Интервью завершено, отчёт сохранён"}
 
