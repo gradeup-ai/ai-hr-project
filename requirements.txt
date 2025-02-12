@@ -3,9 +3,14 @@ uvicorn
 openai
 deepgram-sdk
 sqlalchemy
-psycopg2
+psycopg2-binary  # Используем `psycopg2-binary` вместо `psycopg2`
 pydantic
+pydantic-settings  # Добавляем для работы с переменными окружения
 requests
 aiohttp
 gspread
 oauth2client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
