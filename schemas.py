@@ -1,16 +1,12 @@
 from pydantic import BaseModel
 from typing import Optional
 
-
-# 📌 **Схема для регистрации кандидата**
 class CandidateCreate(BaseModel):
     name: str
     email: str
     phone: str
     gender: str
 
-
-# 📌 **Схема ответа при регистрации кандидата**
 class CandidateResponse(BaseModel):
     id: str
     name: str
@@ -20,17 +16,16 @@ class CandidateResponse(BaseModel):
     interview_link: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Чтобы FastAPI корректно преобразовывал SQLAlchemy -> Pydantic
 
-
-# 📌 **Схема интервью**
 class InterviewResponse(BaseModel):
     id: str
     candidate_id: str
     status: str
-    questions: Optional[str] = None
-    answers: Optional[str] = None
-    report: Optional[str] = None
+    questions: Optional[str]
+    answers: Optional[str]
+    report: Optional[str]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
