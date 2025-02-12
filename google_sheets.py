@@ -31,6 +31,8 @@ def connect_google_sheets():
         client = gspread.authorize(creds)
         sheet = client.open_by_key(SPREADSHEET_ID)
         return sheet
+    except gspread.exceptions.APIError as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка Google Sheets API: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка подключения к Google Sheets: {str(e)}")
 
@@ -47,6 +49,20 @@ def get_or_create_worksheet(sheet, sheet_name, headers):
     return worksheet
 
 
+def append_row_safe(worksheet, row_data):
+    """
+    Добавляет строку в лист, заменяя None на 'Нет данных'.
+    """
+    formatted_row = [cell if cell is not None else "Нет данных" for cell in row_data]
+    
+    try:
+        worksheet.append_row(formatted_row)
+    except gspread.exceptions.APIError as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка Google Sheets API при записи: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при записи данных в Google Sheets: {str(e)}")
+
+
 def save_candidate_to_google_sheets(candidate_id, name, email, phone, gender, interview_link):
     """
     Сохраняет данные о кандидате в лист 'Кандидаты'.
@@ -55,10 +71,7 @@ def save_candidate_to_google_sheets(candidate_id, name, email, phone, gender, in
     headers = ["Candidate ID", "Name", "Email", "Phone", "Gender", "Interview Link"]
     worksheet = get_or_create_worksheet(sheet, SHEET_CANDIDATES, headers)
 
-    try:
-        worksheet.append_row([candidate_id, name, email, phone, gender, interview_link])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при записи данных кандидата: {str(e)}")
+    append_row_safe(worksheet, [candidate_id, name, email, phone, gender, interview_link])
 
 
 def save_interview_to_google_sheets(interview_id, candidate_id, status, questions, answers):
@@ -69,13 +82,7 @@ def save_interview_to_google_sheets(interview_id, candidate_id, status, question
     headers = ["Interview ID", "Candidate ID", "Status", "Questions", "Answers"]
     worksheet = get_or_create_worksheet(sheet, SHEET_INTERVIEWS, headers)
 
-    formatted_questions = questions if questions else "Нет данных"
-    formatted_answers = answers if answers else "Нет данных"
-
-    try:
-        worksheet.append_row([interview_id, candidate_id, status, formatted_questions, formatted_answers])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при записи данных интервью: {str(e)}")
+    append_row_safe(worksheet, [interview_id, candidate_id, status, questions, answers])
 
 
 def save_report_to_google_sheets(interview_id, candidate_id, report):
@@ -86,12 +93,7 @@ def save_report_to_google_sheets(interview_id, candidate_id, report):
     headers = ["Interview ID", "Candidate ID", "Report"]
     worksheet = get_or_create_worksheet(sheet, SHEET_REPORTS, headers)
 
-    formatted_report = report if report else "Нет отчёта"
-
-    try:
-        worksheet.append_row([interview_id, candidate_id, formatted_report])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при записи отчёта: {str(e)}")
+    append_row_safe(worksheet, [interview_id, candidate_id, report])
 
 
 def save_video_to_google_sheets(interview_id, candidate_id, video_url):
@@ -102,10 +104,6 @@ def save_video_to_google_sheets(interview_id, candidate_id, video_url):
     headers = ["Interview ID", "Candidate ID", "Video URL"]
     worksheet = get_or_create_worksheet(sheet, SHEET_VIDEOS, headers)
 
-    formatted_video_url = video_url if video_url else "Видео не записано"
+    append_row_safe(worksheet, [interview_id, candidate_id, video_url])
 
-    try:
-        worksheet.append_row([interview_id, candidate_id, formatted_video_url])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при записи видео: {str(e)}")
 
