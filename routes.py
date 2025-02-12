@@ -26,7 +26,7 @@ def get_db():
     finally:
         db.close()
 
-# 📌 1️⃣ **Регистрация кандидата**
+# 📺 1️⃣ **Регистрация кандидата**
 @router.post("/register/", response_model=CandidateResponse)
 def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     interview_id = str(uuid.uuid4())
@@ -48,7 +48,7 @@ def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     return new_candidate
 
 
-# 📌 2️⃣ **Начало интервью**
+# 📺 2️⃣ **Начало интервью**
 @router.get("/interview/{interview_id}", response_model=InterviewResponse)
 def start_interview(interview_id: str, db: Session = Depends(get_db)):
     candidate = db.query(CandidateDB).filter(CandidateDB.id == interview_id).first()
@@ -75,24 +75,7 @@ def start_interview(interview_id: str, db: Session = Depends(get_db)):
 
     return interview
 
-
-# 📌 3️⃣ **Создание видеозвонка (LiveKit)**
-@router.get("/livekit/{interview_id}")
-def create_livekit_session(interview_id: str, db: Session = Depends(get_db)):
-    candidate = db.query(CandidateDB).filter(CandidateDB.id == interview_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Кандидат не найден")
-
-    headers = {"Authorization": f"Bearer {LIVEKIT_API_KEY}"}
-    response = requests.post("https://api.livekit.io/room", headers=headers, json={"name": interview_id})
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Ошибка создания сессии LiveKit")
-
-    return response.json()
-
-
-# 📌 4️⃣ **Распознавание речи и анализ ответа**
+# 📺 3️⃣ **Распознавание речи и анализ ответа**
 async def transcribe_audio(audio_url: str):
     if not DEEPGRAM_API_KEY:
         raise HTTPException(status_code=500, detail="Deepgram API key отсутствует!")
@@ -120,7 +103,7 @@ async def process_answer(interview_id: str, audio_url: str, db: Session = Depend
     return {"message": "Ответ сохранён", "answer": transcript}
 
 
-# 📌 5️⃣ **Сохранение видеозаписи интервью**
+# 📺 4️⃣ **Сохранение видеозаписи интервью**
 @router.post("/interview/{interview_id}/save_video")
 def save_interview_video(interview_id: str, video_url: str, db: Session = Depends(get_db)):
     interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
@@ -134,19 +117,21 @@ def save_interview_video(interview_id: str, video_url: str, db: Session = Depend
     return {"message": "Видео интервью сохранено", "video_url": video_url}
 
 
-# 📌 6️⃣ **Завершение интервью и генерация отчёта**
+# 📺 5️⃣ **Завершение интервью и генерация отчёта**
 @router.post("/interview/{interview_id}/finish")
 def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Интервью не найдено")
 
+    # Генерация отчёта AI-HR
     report = generate_report(interview_id)
     interview.report = report
     interview.status = "completed"
     db.commit()
     db.refresh(interview)
 
+    # Сохранение данных в Google Sheets
     save_interview_to_google_sheets(
         interview.id, interview.candidate_id, interview.status,
         interview.questions, interview.answers, report, interview.video_url
