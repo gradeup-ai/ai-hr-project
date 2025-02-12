@@ -89,7 +89,27 @@ def start_interview(interview_id: str, db: Session = Depends(get_db)):
         report=interview.report
     )
 
-# 📺 3️⃣ **Распознавание речи и анализ ответа**
+
+# 📺 3️⃣ **Создание видеозвонка (LiveKit)**
+@router.get("/livekit/{interview_id}")
+def create_livekit_session(interview_id: str, db: Session = Depends(get_db)):
+    """
+    Создаёт видеозвонок в LiveKit.
+    """
+    candidate = db.query(CandidateDB).filter(CandidateDB.id == interview_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    headers = {"Authorization": f"Bearer {LIVEKIT_API_KEY}"}
+    response = requests.post("https://api.livekit.io/room", headers=headers, json={"name": interview_id})
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Ошибка создания сессии LiveKit")
+
+    return response.json()
+
+
+# 📺 4️⃣ **Распознавание речи и анализ ответа**
 async def transcribe_audio(audio_url: str):
     if not DEEPGRAM_API_KEY:
         raise HTTPException(status_code=500, detail="Deepgram API key отсутствует!")
@@ -103,35 +123,24 @@ async def transcribe_audio(audio_url: str):
         return response["results"]["channels"][0]["alternatives"][0]["transcript"]
 
 
-@router.post("/register/", response_model=CandidateResponse)
-def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
-    interview_id = str(uuid.uuid4())
-    interview_link = f"https://ai-hr-project.onrender.com/interview/{interview_id}"
+@router.post("/interview/{interview_id}/answer")
+async def process_answer(interview_id: str, audio_url: str, db: Session = Depends(get_db)):
+    """
+    Обрабатывает ответ кандидата: распознаёт речь, анализирует ответ и генерирует следующий вопрос.
+    """
+    interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Интервью не найдено")
 
-    new_candidate = CandidateDB(
-        id=interview_id,
-        name=candidate.name,
-        email=candidate.email,
-        phone=candidate.phone,
-        gender=candidate.gender,
-        interview_link=interview_link
-    )
-
-    db.add(new_candidate)
+    transcript = await transcribe_audio(audio_url)
+    interview.answers = (interview.answers or "") + f"\n{transcript}"
     db.commit()
-    db.refresh(new_candidate)
+    db.refresh(interview)
 
-    return CandidateResponse(
-        id=new_candidate.id,
-        name=new_candidate.name,
-        email=new_candidate.email,
-        phone=new_candidate.phone,
-        gender=new_candidate.gender,
-        interview_link=new_candidate.interview_link
-    )
+    return {"message": "Ответ сохранён", "answer": transcript}
 
 
-# 📺 4️⃣ **Сохранение видеозаписи интервью**
+# 📺 5️⃣ **Сохранение видеозаписи интервью**
 @router.post("/interview/{interview_id}/save_video")
 def save_interview_video(interview_id: str, video_url: str, db: Session = Depends(get_db)):
     interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
@@ -145,7 +154,7 @@ def save_interview_video(interview_id: str, video_url: str, db: Session = Depend
     return {"message": "Видео интервью сохранено", "video_url": video_url}
 
 
-# 📺 5️⃣ **Завершение интервью и генерация отчёта**
+# 📺 6️⃣ **Завершение интервью и генерация отчёта**
 @router.post("/interview/{interview_id}/finish")
 def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
@@ -158,7 +167,15 @@ def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(interview)
 
-    save_interview_to_google_sheets(interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, report, interview.video_url)
+    save_interview_to_google_sheets(
+        interview.id,
+        interview.candidate_id,
+        interview.status,
+        interview.questions,
+        interview.answers,
+        report,
+        interview.video_url
+    )
 
     return {"message": "Интервью завершено, отчёт сохранён"}
 
