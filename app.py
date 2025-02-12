@@ -168,16 +168,28 @@ async def transcribe_audio(audio_url: str):
 
 @app.post("/interview/{interview_id}/answer")
 async def process_answer(interview_id: str, audio_url: str):
-    if interview_id not in interviews:
+    session = SessionLocal()
+    interview = session.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
+
+    if not interview:
         raise HTTPException(status_code=404, detail="Интервью не найдено")
-    
+
+    # Распознаем голосовой ответ
     transcript = await transcribe_audio(audio_url)
-    interviews[interview_id]["answers"].append(transcript)
 
-    question = generate_next_question(interview_id, transcript)
-    interviews[interview_id]["questions"].append(question)
+    # Добавляем ответ в БД
+    if interview.answers:
+        interview.answers += f"\n{transcript}"
+    else:
+        interview.answers = transcript
 
-    return {"question": question}
+    session.commit()
+    session.close()
+
+    # Генерируем следующий вопрос
+    next_question = generate_next_question(interview_id, transcript)
+
+    return {"next_question": next_question}
 
 # 8️⃣ Функция генерации следующего вопроса (GPT-4o)
 def generate_next_question(interview_id, last_answer):
@@ -225,8 +237,21 @@ def finish_interview(interview_id: str):
     if not interview:
         raise HTTPException(status_code=404, detail="Интервью не найдено")
 
+    # Генерируем отчёт AI-HR перед отправкой в таблицу
+    report = generate_report(interview_id)
+    interview.report = report
+
+    # Записываем в Google Sheets
     sheet = connect_google_sheets()
-    sheet.append_row([interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, interview.report])
+    sheet.append_row([
+        interview.id, 
+        interview.candidate_id, 
+        interview.status, 
+        interview.questions if interview.questions else "Нет данных",
+        interview.answers if interview.answers else "Нет данных",
+        report, 
+        interview.video_url if interview.video_url else "Видео не записано"
+    ])
 
     interview.status = "completed"
     session.commit()
@@ -235,56 +260,49 @@ def finish_interview(interview_id: str):
     return {"message": "Интервью завершено, отчёт сохранён"}
 
 # 🔟 Функция генерации отчёта (GPT-4o)
-def generate_report(interview_id):
-    candidate = interviews[interview_id]["candidate"]
-    questions = interviews[interview_id]["questions"]
-    answers = interviews[interview_id]["answers"]
+def generate_report(interview_id: str):
+    session = SessionLocal()
+    interview = session.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
 
+    if not interview:
+        raise HTTPException(status_code=404, detail="Интервью не найдено")
+
+    # Генерируем аналитический отчёт
     prompt = f"""
-Сгенерируй **детальный отчёт** по собеседованию с кандидатом {candidate['name']}.
+    Сгенерируй детальный анализ по собеседованию с кандидатом {interview.candidate_id}.
 
-📌 **1. Основные данные кандидата**
-- Имя: {candidate['name']}
-- Email: {candidate['email']}
-- Телефон: {candidate['phone']}
-- Пол: {candidate['gender']}
+    📌 **1. Вопросы и ответы**  
+    Вопросы: {interview.questions if interview.questions else "Нет данных"}  
+    Ответы: {interview.answers if interview.answers else "Нет данных"}  
 
-📌 **2. Вопросы и ответы**  
-**Вопросы** {questions}  
-**Ответы** {answers}  
+    📌 **2. Оценка Hard Skills**  
+    - Анализируй технические знания кандидата и сравнивай с требованиями вакансии.  
+    - Оцени уровень знаний по 5-балльной шкале и объясни, почему.  
 
-📌 **3. Оценка Hard Skills (Технические навыки)**  
-- Определи ключевые технические навыки, требуемые для вакансии.
-- Оцени уровень знаний по **5-балльной шкале** с детальным анализом.  
-- Дай примеры из интервью, подтверждающие уровень владения каждым навыком.
+    📌 **3. Оценка Soft Skills**  
+    - Насколько кандидат ясно излагает мысли?  
+    - Как он реагирует на сложные вопросы?  
+    - Оцени стрессоустойчивость и способность к анализу.  
 
-📌 **4. Оценка Soft Skills (Личностные качества)**  
-- Коммуникация: оцени, насколько ясно кандидат выражает мысли и взаимодействует.  
-- Аналитическое мышление: оцени глубину анализа задач.  
-- Стрессоустойчивость: как кандидат реагирует на сложные вопросы.  
-- Самостоятельность: способен ли он решать задачи без чётких инструкций.  
-- Готовность к обучению: как он адаптируется к новым темам.
-
-📌 **5. Анализ эмоций и речи (Emotion AI)**  
-- Определи **доминирующее настроение** кандидата: спокойный, уверенный, нервозный, агрессивный.  
-- Как менялись его **эмоции в ходе собеседования**?  
-- Реакция на сложные вопросы: были ли признаки волнения, раздражения, неуверенности?  
-- Проанализируй **темп, громкость, паузы в речи** и как это влияет на восприятие.  
-
-📌 **6. Итоговый вердикт AI-HR**  
-- Подходит ли кандидат? **Да / Нет** (аргументированный вывод).  
-- Сильные стороны кандидата.  
-- Зоны роста и рекомендации.  
-"""
-
+    📌 **4. Итоговый вердикт**  
+    - Подходит ли кандидат? **Да / Нет** (обоснование).  
+    - Какие сильные стороны?  
+    - Какие зоны роста?  
+    """
 
     response = client.completions.create(
         model="gpt-4o",
-        messages=[{"role": "system", "content": "Ты – AI-HR, создаёшь отчёт после интервью."},
+        messages=[{"role": "system", "content": "Ты – AI-HR, оцениваешь кандидата."},
                   {"role": "user", "content": prompt}]
     )
 
-    return response.choices[0].message["content"]
+    report_text = response.choices[0].message["content"]
+
+    interview.report = report_text
+    session.commit()
+    session.close()
+
+    return report_text
 
 # 1️⃣1️⃣ API для проверки сервера
 @app.get("/")
