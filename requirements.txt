@@ -5,7 +5,7 @@ deepgram-sdk
 sqlalchemy
 psycopg2-binary  # Используем `psycopg2-binary` вместо `psycopg2`
 pydantic
-pydantic-settings  # Добавляем для работы с переменными окружения
+pydantic-settings  # Для работы с переменными окружения
 requests
 aiohttp
 gspread
@@ -16,3 +16,6 @@ google-auth-httplib2
 google-api-python-client
 databases
 asyncpg
+python-dotenv  # Поддержка переменных окружения из .env
+starlette  # Бэкенд для FastAPI
+httpx  # Для асинхронных HTTP-запросов
