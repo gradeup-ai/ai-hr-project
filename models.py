@@ -1,6 +1,7 @@
-from sqlalchemy import Column, String, Text, ForeignKey
+from sqlalchemy import Column, String, Text, ForeignKey, Integer
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from database import Base, SessionLocal  # Исправленный импорт
+from database import Base
 
 class CandidateDB(Base):
     """
