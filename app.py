@@ -4,6 +4,7 @@ import requests
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import JSONResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, SessionLocal
 from models import CandidateDB, InterviewDB
@@ -13,28 +14,23 @@ from google_sheets import save_interview_to_google_sheets
 from deepgram import Deepgram
 from openai import OpenAI
 
-# 📌 Инициализация FastAPI
+# Инициализация FastAPI
 app = FastAPI(
     title="AI-HR Interview System",
     description="Система виртуального интервью с AI-HR Эмили",
     version="1.0.0"
 )
 
-# 📌 API ключи
+# API ключи
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Проверка наличия API ключей
-if not OPENAI_API_KEY:
-    raise ValueError("API ключ OpenAI отсутствует!")
-
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 📌 Создание таблиц в базе данных (лучше делать через Alembic)
+# Создание таблиц в базе данных
 Base.metadata.create_all(bind=engine)
 
-# 📌 Функция получения сессии БД
+# Функция получения сессии БД
 def get_db():
     db = SessionLocal()
     try:
@@ -42,6 +38,10 @@ def get_db():
     finally:
         db.close()
 
+# 📌 **Главная страница**
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return "<h1>Добро пожаловать в AI-HR Interview System!</h1><p>Перейдите в <a href='/docs'>/docs</a> для API документации.</p>"
 
 # 📌 **1️⃣ Регистрация кандидата**
 @app.post("/register/", response_model=CandidateResponse)
@@ -62,8 +62,14 @@ def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_candidate)
 
-    return new_candidate
-
+    return CandidateResponse(
+        id=new_candidate.id,
+        name=new_candidate.name,
+        email=new_candidate.email,
+        phone=new_candidate.phone,
+        gender=new_candidate.gender,
+        interview_link=new_candidate.interview_link
+    )
 
 # 📌 **2️⃣ Начало интервью**
 @app.get("/interview/{interview_id}", response_model=InterviewResponse)
@@ -86,13 +92,18 @@ def start_interview(interview_id: str, db: Session = Depends(get_db)):
         status="in_progress",
         questions=first_question
     )
-
     db.add(interview)
     db.commit()
     db.refresh(interview)
 
-    return interview
-
+    return InterviewResponse(
+        id=interview.id,
+        candidate_id=interview.candidate_id,
+        status=interview.status,
+        questions=interview.questions,
+        answers=interview.answers,
+        report=interview.report
+    )
 
 # 📌 **3️⃣ Распознавание речи (Deepgram)**
 async def transcribe_audio(audio_url: str):
@@ -107,7 +118,6 @@ async def transcribe_audio(audio_url: str):
         )
         return response["results"]["channels"][0]["alternatives"][0]["transcript"]
 
-
 @app.post("/interview/{interview_id}/answer")
 async def process_answer(interview_id: str, audio_url: str, db: Session = Depends(get_db)):
     interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
@@ -120,7 +130,6 @@ async def process_answer(interview_id: str, audio_url: str, db: Session = Depend
     db.refresh(interview)
 
     return {"message": "Ответ сохранён", "answer": transcript}
-
 
 # 📌 **4️⃣ Сохранение видео интервью**
 @app.post("/interview/{interview_id}/save_video")
@@ -135,7 +144,6 @@ def save_interview_video(interview_id: str, video_url: str, db: Session = Depend
 
     return {"message": "Видео интервью сохранено", "video_url": video_url}
 
-
 # 📌 **5️⃣ Завершение интервью и генерация отчёта**
 @app.post("/interview/{interview_id}/finish")
 def finish_interview(interview_id: str, db: Session = Depends(get_db)):
@@ -149,18 +157,9 @@ def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(interview)
 
-    save_interview_to_google_sheets(
-        interview.id,
-        interview.candidate_id,
-        interview.status,
-        interview.questions,
-        interview.answers,
-        report,
-        interview.video_url
-    )
+    save_interview_to_google_sheets(interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, report, interview.video_url)
 
     return {"message": "Интервью завершено, отчёт сохранён"}
-
 
 # 📌 **6️⃣ Создание видеозвонка (LiveKit)**
 @app.get("/livekit/{interview_id}")
@@ -170,18 +169,14 @@ def create_livekit_session(interview_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Кандидат не найден")
 
     headers = {"Authorization": f"Bearer {LIVEKIT_API_KEY}"}
-    response = requests.post(
-        "https://api.livekit.io/room",
-        headers=headers,
-        json={"name": interview_id}
-    )
+    response = requests.post("https://api.livekit.io/room", headers=headers, json={"name": interview_id})
 
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Ошибка создания сессии LiveKit")
 
     return response.json()
 
-
 # 📌 **Запуск сервера**
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
