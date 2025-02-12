@@ -103,18 +103,32 @@ async def transcribe_audio(audio_url: str):
         return response["results"]["channels"][0]["alternatives"][0]["transcript"]
 
 
-@router.post("/interview/{interview_id}/answer")
-async def process_answer(interview_id: str, audio_url: str, db: Session = Depends(get_db)):
-    interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Интервью не найдено")
+@router.post("/register/", response_model=CandidateResponse)
+def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
+    interview_id = str(uuid.uuid4())
+    interview_link = f"https://ai-hr-project.onrender.com/interview/{interview_id}"
 
-    transcript = await transcribe_audio(audio_url)
-    interview.answers = (interview.answers or "") + f"\n{transcript}"
+    new_candidate = CandidateDB(
+        id=interview_id,
+        name=candidate.name,
+        email=candidate.email,
+        phone=candidate.phone,
+        gender=candidate.gender,
+        interview_link=interview_link
+    )
+
+    db.add(new_candidate)
     db.commit()
-    db.refresh(interview)
+    db.refresh(new_candidate)
 
-    return {"message": "Ответ сохранён", "answer": transcript}
+    return CandidateResponse(
+        id=new_candidate.id,
+        name=new_candidate.name,
+        email=new_candidate.email,
+        phone=new_candidate.phone,
+        gender=new_candidate.gender,
+        interview_link=new_candidate.interview_link
+    )
 
 
 # 📺 4️⃣ **Сохранение видеозаписи интервью**
