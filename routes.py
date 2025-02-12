@@ -1,22 +1,34 @@
 import uuid
 import requests
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from models import SessionLocal, CandidateDB, InterviewDB
 from ai_report import generate_report
 from google_sheets import save_to_google_sheets
 from deepgram import Deepgram
 import aiohttp
 import os
+from openai import OpenAI
 
 router = APIRouter()
 
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 
 # 📌 1️⃣ **Регистрация кандидата**
+class CandidateRegister(BaseModel):
+    name: str
+    email: str
+    phone: str
+    gender: str
+
+
 @router.post("/register/")
-def register(candidate: CandidateDB):
+def register(candidate: CandidateRegister):
     """
     Регистрирует кандидата и создаёт ссылку на интервью.
     """
@@ -53,7 +65,13 @@ def start_interview(interview_id: str):
     if not candidate:
         raise HTTPException(status_code=404, detail="Кандидат не найден")
 
-    first_question = "Привет! Я Эмили, ваш виртуальный HR. Расскажите о своём опыте работы."
+    first_question = (
+        f"Здравствуйте, {candidate.name}! Я — Эмили, виртуальный HR. "
+        f"Мы сейчас проведём интервью на позицию. "
+        f"Я буду задавать вам вопросы, чтобы оценить ваши профессиональные навыки и личностные качества. "
+        f"Отвечайте подробно и искренне. Если что-то будет неясно – просто уточните у меня! "
+        f"Начнём с простого: расскажите о себе и вашем опыте работы."
+    )
 
     return {"message": "Интервью началось", "question": first_question}
 
@@ -95,6 +113,29 @@ async def transcribe_audio(audio_url: str):
             {"punctuate": True, "language": "ru"}
         )
         return response["results"]["channels"][0]["alternatives"][0]["transcript"]
+
+
+def generate_next_question(interview_id, last_answer):
+    """
+    Генерирует следующий вопрос на основе ответа кандидата.
+    """
+    session = SessionLocal()
+    interview = session.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
+    session.close()
+
+    prompt = (
+        f"Ты — AI-HR Эмили. Ты проводишь интервью с кандидатом {interview.candidate_id}. "
+        f"Твоя задача — провести структурированное интервью, анализируя его ответы. "
+        f"\nКандидат ответил: '{last_answer}' "
+        f"\nКакой логичный следующий вопрос для оценки его навыков?"
+    )
+
+    response = client.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message["content"]
 
 
 @router.post("/interview/{interview_id}/answer")
