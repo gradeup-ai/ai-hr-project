@@ -4,19 +4,19 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 # Получаем данные для SMTP из переменных окружения
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")  # SMTP-сервер (например, Gmail)
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))  # Порт SMTP (обычно 587)
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.yandex.com")  # SMTP-сервер Яндекса
+SMTP_PORT = int(os.getenv("SMTP_PORT", 465))  # Яндекс использует порт 465 (SSL)
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # Логин (почта отправителя)
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # Пароль от почты (или API-ключ)
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # Пароль от почты (API-ключ)
 EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USERNAME)  # Почта отправителя
 
 def send_interview_email(email_to, interview_link):
     """
-    Отправка email с ссылкой на интервью.
+    Отправка email с ссылкой на интервью через Яндекс.Почту.
     """
     if not SMTP_USERNAME or not SMTP_PASSWORD:
         print("Ошибка: SMTP_USERNAME или SMTP_PASSWORD не установлены!")
-        return
+        return False
 
     try:
         # Формируем email
@@ -25,7 +25,7 @@ def send_interview_email(email_to, interview_link):
         msg["To"] = email_to
         msg["Subject"] = "Ваше интервью с AI HR"
 
-        body = f"""
+        body = f"""\
         <html>
         <body>
             <h2>Привет!</h2>
@@ -36,17 +36,20 @@ def send_interview_email(email_to, interview_link):
         </body>
         </html>
         """
-
         msg.attach(MIMEText(body, "html"))
 
-        # Подключаемся к SMTP-серверу и отправляем email
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()  # Шифрование TLS
+        # Подключаемся к Яндекс SMTP-серверу (используем SSL)
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.sendmail(EMAIL_FROM, email_to, msg.as_string())
-        server.quit()
 
-        print(f"Email успешно отправлен на {email_to}")
+        print(f"✅ Email успешно отправлен на {email_to}")
+        return True
 
     except Exception as e:
-        print(f"Ошибка отправки email: {e}")
+        print(f"❌ Ошибка отправки email: {e}")
+        return False
+
+    finally:
+        if 'server' in locals():
+            server.quit()  # Закрываем соединение
