@@ -191,6 +191,7 @@ async def process_answer(interview_id: str, audio_url: str):
 
     return {"next_question": next_question}
 
+
 # 8️⃣ Функция генерации следующего вопроса (GPT-4o)
 def generate_next_question(interview_id, last_answer):
     candidate = interviews[interview_id]["candidate"]
@@ -218,8 +219,7 @@ def generate_next_question(interview_id, last_answer):
 Кандидат ответил: "{last_answer}".  
 Какой будет следующий вопрос для глубокой оценки его квалификации?
 """
-
-
+"""
     response = client.completions.create(
         model="gpt-4o",
         messages=[{"role": "system", "content": "Ты – AI-HR, оцениваешь кандидата."},
@@ -228,12 +228,31 @@ def generate_next_question(interview_id, last_answer):
 
     return response.choices[0].message["content"]
 
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+def connect_google_sheets():
+    # Загружаем JSON-ключ из переменной окружения
+    credentials_json = os.getenv("GOOGLE_SHEETS_CREDENTIALS")
+
+    if not credentials_json:
+        raise HTTPException(status_code=500, detail="Google Sheets credentials отсутствуют!")
+
+    creds_dict = json.loads(credentials_json)  # Преобразуем строку в JSON-объект
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, 
+        ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
+    
+    client = gspread.authorize(creds)
+    sheet = client.open(SHEET_NAME).sheet1
+    return sheet
+
 # 9️⃣ API для завершения интервью и отчёта
 @app.post("/interview/{interview_id}/finish")
 def finish_interview(interview_id: str):
     session = SessionLocal()
     interview = session.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
-
+    
     if not interview:
         raise HTTPException(status_code=404, detail="Интервью не найдено")
 
