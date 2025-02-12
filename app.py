@@ -4,6 +4,7 @@ import requests
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, SessionLocal
@@ -19,6 +20,15 @@ app = FastAPI(
     title="AI-HR Interview System",
     description="Система виртуального интервью с AI-HR Эмили",
     version="1.0.0"
+)
+
+# Разрешение CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Разрешает все домены (можно указать конкретные)
+    allow_credentials=True,
+    allow_methods=["*"],  # Разрешает все методы (GET, POST, PUT, DELETE)
+    allow_headers=["*"],  # Разрешает все заголовки
 )
 
 # API ключи
@@ -179,4 +189,5 @@ def create_livekit_session(interview_id: str, db: Session = Depends(get_db)):
 # 📌 **Запуск сервера**
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
