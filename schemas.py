@@ -1,32 +1,36 @@
 from pydantic import BaseModel
 from typing import Optional
 
-class CandidateBase(BaseModel):
+
+# 📌 **Схема для регистрации кандидата**
+class CandidateCreate(BaseModel):
     name: str
     email: str
     phone: str
     gender: str
 
-class CandidateCreate(CandidateBase):
-    pass  # Используется для создания кандидата
 
-class CandidateResponse(CandidateBase):
+# 📌 **Схема ответа при регистрации кандидата**
+class CandidateResponse(BaseModel):
     id: str
+    name: str
+    email: str
+    phone: str
+    gender: str
     interview_link: str
 
     class Config:
         orm_mode = True
 
-class InterviewBase(BaseModel):
+
+# 📌 **Схема интервью**
+class InterviewResponse(BaseModel):
+    id: str
     candidate_id: str
     status: str
     questions: Optional[str] = None
     answers: Optional[str] = None
     report: Optional[str] = None
-    video_url: Optional[str] = None
-
-class InterviewResponse(InterviewBase):
-    id: str
 
     class Config:
         orm_mode = True
