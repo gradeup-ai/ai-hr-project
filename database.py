@@ -7,13 +7,17 @@ from sqlalchemy.orm import sessionmaker
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("Переменная окружения DATABASE_URL не установлена!")
+    raise ValueError("Переменная окружения DATABASE_URL не установлена! Убедитесь, что файл .env настроен.")
 
-# Создание движка SQLAlchemy
-engine = create_engine(DATABASE_URL)
+try:
+    # Создание движка SQLAlchemy
+    engine = create_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 
-# Создание фабрики сессий
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    # Создание фабрики сессий
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Базовый класс для моделей
-Base = declarative_base()
+    # Базовый класс для моделей
+    Base = declarative_base()
+
+except Exception as e:
+    raise RuntimeError(f"Ошибка подключения к базе данных: {str(e)}")
