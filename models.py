@@ -1,7 +1,6 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Integer
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, String, Text, ForeignKey
 from sqlalchemy.orm import relationship
-from database import Base
+from database import Base, SessionLocal  # Исправленный импорт
 
 class CandidateDB(Base):
     """
@@ -36,5 +35,3 @@ class InterviewDB(Base):
 
     # Связь с кандидатом
     candidate = relationship("CandidateDB", back_populates="interviews")
-
-
