@@ -5,7 +5,7 @@ import aiohttp
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, SessionLocal
 from models import CandidateDB, InterviewDB
@@ -14,7 +14,7 @@ from ai_report import generate_report
 from google_sheets import save_interview_to_google_sheets
 from deepgram import Deepgram
 from openai import OpenAI
-from send_email import send_interview_email  # Функция для отправки email
+from send_email import send_interview_email  # 📩 Импорт функции отправки email
 
 # Инициализация FastAPI
 app = FastAPI(
@@ -23,20 +23,21 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Разрешение CORS (для фронта)
+# Разрешение CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешает запросы с любого домена
+    allow_origins=["*"],  
     allow_credentials=True,
-    allow_methods=["*"],  # Разрешает все методы (GET, POST, PUT, DELETE)
-    allow_headers=["*"],  # Разрешает все заголовки
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
-# API ключи
+# API ключи (загружаются из Render)
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-EMAIL_API_KEY = os.getenv("EMAIL_API_KEY")  # Добавлен API ключ для email
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://ai-hr-frontend.vercel.app")  # 👈 Используем фронтенд на Vercel
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Создание таблиц в базе данных
@@ -55,11 +56,11 @@ def get_db():
 def root():
     return "<h1>Добро пожаловать в AI-HR Interview System!</h1><p>Перейдите в <a href='/docs'>/docs</a> для API документации.</p>"
 
-# 📌 **1️⃣ Регистрация кандидата + Отправка email**
+# 📌 **1️⃣ Регистрация кандидата**
 @app.post("/register/", response_model=CandidateResponse)
 def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     interview_id = str(uuid.uuid4())
-    interview_link = f"https://ai-hr-frontend.vercel.app/interview/{interview_id}"  # Исправленная ссылка на фронт
+    interview_link = f"{FRONTEND_URL}/interview/{interview_id}"  # 👈 Подставляем верный URL фронтенда
 
     new_candidate = CandidateDB(
         id=interview_id,
@@ -74,11 +75,8 @@ def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_candidate)
 
-    # Отправка email с ссылкой на интервью
-    try:
-        send_interview_email(candidate.email, interview_link)
-    except Exception as e:
-        print(f"Ошибка отправки email: {e}")
+    # 📩 **Отправляем email с ссылкой на интервью**
+    send_interview_email(candidate.email, interview_link)
 
     return CandidateResponse(
         id=new_candidate.id,
@@ -93,8 +91,21 @@ def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
 @app.get("/interview/{interview_id}", response_model=InterviewResponse)
 def start_interview(interview_id: str, db: Session = Depends(get_db)):
     candidate = db.query(CandidateDB).filter(CandidateDB.id == interview_id).first()
+    interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
+
     if not candidate:
         raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    # Если интервью уже создано, возвращаем его
+    if interview:
+        return InterviewResponse(
+            id=interview.id,
+            candidate_id=interview.candidate_id,
+            status=interview.status,
+            questions=interview.questions,
+            answers=interview.answers,
+            report=interview.report
+        )
 
     first_question = (
         f"Здравствуйте, {candidate.name}! Я — Эмили, виртуальный HR. "
@@ -123,33 +134,7 @@ def start_interview(interview_id: str, db: Session = Depends(get_db)):
         report=interview.report
     )
 
-# 📌 **3️⃣ Распознавание речи (Deepgram)**
-async def transcribe_audio(audio_url: str):
-    if not DEEPGRAM_API_KEY:
-        raise HTTPException(status_code=500, detail="Deepgram API key отсутствует!")
-
-    deepgram = Deepgram(DEEPGRAM_API_KEY)
-    async with aiohttp.ClientSession() as session:
-        response = await deepgram.transcription.prerecorded(
-            {"url": audio_url},
-            {"punctuate": True, "language": "ru"}
-        )
-        return response["results"]["channels"][0]["alternatives"][0]["transcript"]
-
-@app.post("/interview/{interview_id}/answer")
-async def process_answer(interview_id: str, audio_url: str, db: Session = Depends(get_db)):
-    interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Интервью не найдено")
-
-    transcript = await transcribe_audio(audio_url)
-    interview.answers = (interview.answers or "") + f"\n{transcript}"
-    db.commit()
-    db.refresh(interview)
-
-    return {"message": "Ответ сохранён", "answer": transcript}
-
-# 📌 **4️⃣ Завершение интервью и генерация отчёта**
+# 📌 **3️⃣ Завершение интервью и генерация отчёта**
 @app.post("/interview/{interview_id}/finish")
 def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     interview = db.query(InterviewDB).filter(InterviewDB.id == interview_id).first()
@@ -162,9 +147,27 @@ def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(interview)
 
-    save_interview_to_google_sheets(interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, report, interview.video_url)
+    save_interview_to_google_sheets(
+        interview.id, interview.candidate_id, interview.status, 
+        interview.questions, interview.answers, report, interview.video_url
+    )
 
     return {"message": "Интервью завершено, отчёт сохранён"}
+
+# 📌 **4️⃣ Создание видеозвонка (LiveKit)**
+@app.get("/livekit/{interview_id}")
+def create_livekit_session(interview_id: str, db: Session = Depends(get_db)):
+    candidate = db.query(CandidateDB).filter(CandidateDB.id == interview_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    headers = {"Authorization": f"Bearer {LIVEKIT_API_KEY}"}
+    response = requests.post("https://api.livekit.io/room", headers=headers, json={"name": interview_id})
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Ошибка создания сессии LiveKit")
+
+    return response.json()
 
 # 📌 **Запуск сервера**
 if __name__ == "__main__":
