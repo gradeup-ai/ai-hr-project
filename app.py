@@ -13,23 +13,28 @@ from google_sheets import save_interview_to_google_sheets
 from deepgram import Deepgram
 from openai import OpenAI
 
-# Инициализация FastAPI
+# 📌 Инициализация FastAPI
 app = FastAPI(
     title="AI-HR Interview System",
     description="Система виртуального интервью с AI-HR Эмили",
     version="1.0.0"
 )
 
-# API ключи
+# 📌 API ключи
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Проверка наличия API ключей
+if not OPENAI_API_KEY:
+    raise ValueError("API ключ OpenAI отсутствует!")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Создание таблиц в базе данных
+# 📌 Создание таблиц в базе данных (лучше делать через Alembic)
 Base.metadata.create_all(bind=engine)
 
-# Функция получения сессии БД
+# 📌 Функция получения сессии БД
 def get_db():
     db = SessionLocal()
     try:
@@ -57,14 +62,7 @@ def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_candidate)
 
-    return CandidateResponse(
-        id=new_candidate.id,
-        name=new_candidate.name,
-        email=new_candidate.email,
-        phone=new_candidate.phone,
-        gender=new_candidate.gender,
-        interview_link=new_candidate.interview_link
-    )
+    return new_candidate
 
 
 # 📌 **2️⃣ Начало интервью**
@@ -88,18 +86,12 @@ def start_interview(interview_id: str, db: Session = Depends(get_db)):
         status="in_progress",
         questions=first_question
     )
+
     db.add(interview)
     db.commit()
     db.refresh(interview)
 
-    return InterviewResponse(
-        id=interview.id,
-        candidate_id=interview.candidate_id,
-        status=interview.status,
-        questions=interview.questions,
-        answers=interview.answers,
-        report=interview.report
-    )
+    return interview
 
 
 # 📌 **3️⃣ Распознавание речи (Deepgram)**
@@ -157,7 +149,15 @@ def finish_interview(interview_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(interview)
 
-    save_interview_to_google_sheets(interview.id, interview.candidate_id, interview.status, interview.questions, interview.answers, report, interview.video_url)
+    save_interview_to_google_sheets(
+        interview.id,
+        interview.candidate_id,
+        interview.status,
+        interview.questions,
+        interview.answers,
+        report,
+        interview.video_url
+    )
 
     return {"message": "Интервью завершено, отчёт сохранён"}
 
@@ -170,7 +170,11 @@ def create_livekit_session(interview_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Кандидат не найден")
 
     headers = {"Authorization": f"Bearer {LIVEKIT_API_KEY}"}
-    response = requests.post("https://api.livekit.io/room", headers=headers, json={"name": interview_id})
+    response = requests.post(
+        "https://api.livekit.io/room",
+        headers=headers,
+        json={"name": interview_id}
+    )
 
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Ошибка создания сессии LiveKit")
