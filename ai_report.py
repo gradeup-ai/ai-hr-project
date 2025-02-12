@@ -2,7 +2,8 @@ import os
 import json
 from openai import OpenAI
 from sqlalchemy.orm import Session
-from models import SessionLocal, InterviewDB
+from database import SessionLocal  # Исправлен импорт
+from models import InterviewDB
 from fastapi import HTTPException
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
