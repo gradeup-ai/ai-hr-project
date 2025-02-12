@@ -23,7 +23,7 @@ class CandidateResponse(BaseModel):
     gender: str
     interview_link: str
 
-    model_config = ConfigDict(from_attributes=True)  # Для корректной работы с SQLAlchemy
+    model_config = ConfigDict(from_attributes=True)  # Корректная работа с SQLAlchemy
 
 
 class InterviewResponse(BaseModel):
@@ -36,6 +36,7 @@ class InterviewResponse(BaseModel):
     questions: Optional[str] = None
     answers: Optional[str] = None
     report: Optional[str] = None
+    video_url: Optional[str] = None  # Добавлено поле видео
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,3 +47,4 @@ class InterviewFinishResponse(BaseModel):
     """
     message: str
     report: str
+
