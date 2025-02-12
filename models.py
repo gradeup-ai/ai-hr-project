@@ -16,7 +16,7 @@ class CandidateDB(Base):
     gender = Column(String, nullable=False)
     interview_link = Column(String, nullable=False)
     
-    interviews = relationship("InterviewDB", back_populates="candidate")
+    interviews = relationship("InterviewDB", back_populates="candidate", cascade="all, delete-orphan")
 
 
 class InterviewDB(Base):
@@ -26,11 +26,12 @@ class InterviewDB(Base):
     __tablename__ = "interviews"
     
     id = Column(String, primary_key=True, index=True)
-    candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
-    status = Column(String, default="in_progress")
+    candidate_id = Column(String, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String, default="in_progress", nullable=False)
     questions = Column(Text, nullable=True)
     answers = Column(Text, nullable=True)
     report = Column(Text, nullable=True)
     video_url = Column(String, nullable=True)
     
     candidate = relationship("CandidateDB", back_populates="interviews")
+
