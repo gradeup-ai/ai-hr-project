@@ -30,7 +30,7 @@ def get_db():
 @router.post("/register/", response_model=CandidateResponse)
 def register(candidate: CandidateCreate, db: Session = Depends(get_db)):
     interview_id = str(uuid.uuid4())
-    interview_link = f"{FRONTEND_URL}/interview/{interview_id}"
+    interview_link = f"{os.getenv('FRONTEND_URL')}/interview/{interview_id}"
 
     new_candidate = CandidateDB(
         id=interview_id,
