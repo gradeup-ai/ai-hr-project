@@ -39,7 +39,7 @@ LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 LIVEKIT_SERVER_URL = os.getenv("LIVEKIT_SERVER_URL", "https://your-livekit-instance.com")  # Используем LIVEKIT_SERVER_URL
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://ai-hr-frontend.onrender.com")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://ai-hr-frontend.onrender.com")  # Убедись, что FRONTEND_URL указывает на правильный адрес
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -167,9 +167,10 @@ def get_livekit_token(interview_id: str, db: Session = Depends(get_db)):
     )
 
     return {
-        "url": f"{LIVEKIT_SERVER_URL}/room/{interview_id}",  # Теперь используем LIVEKIT_SERVER_URL
+        "url": f"{LIVEKIT_SERVER_URL}/room/{interview_id}",  # Используем LIVEKIT_SERVER_URL
         "token": token
     }
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
