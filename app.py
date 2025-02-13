@@ -38,9 +38,9 @@ app.add_middleware(
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
-LIVEKIT_SERVER_URL = os.getenv("LIVEKIT_SERVER_URL", "https://your-livekit-instance.com")  # Используем LIVEKIT_SERVER_URL
+LIVEKIT_SERVER_URL = os.getenv("LIVEKIT_SERVER_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://ai-hr-frontend.onrender.com")  # Убедись, что FRONTEND_URL указывает на правильный адрес
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
