@@ -27,20 +27,19 @@ app = FastAPI(
 # Разрешение CORS для фронтенда
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ai-hr-frontend.onrender.com"],  # Добавляем ссылку на фронтенд
+    allow_origins=["https://ai-hr-frontend.onrender.com"],  # Разрешаем доступ только с фронтенда
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 # API ключи
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
-LIVEKIT_SERVER_URL = os.getenv("LIVEKIT_SERVER_URL")
+LIVEKIT_SERVER_URL = os.getenv("LIVEKIT_SERVER_URL")  # Переменная окружения для LiveKit URL
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-FRONTEND_URL = os.getenv("FRONTEND_URL")
+FRONTEND_URL = os.getenv("FRONTEND_URL")  # URL фронтенда
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -168,10 +167,9 @@ def get_livekit_token(interview_id: str, db: Session = Depends(get_db)):
     )
 
     return {
-        "url": f"{LIVEKIT_SERVER_URL}/room/{interview_id}",  # Используем LIVEKIT_SERVER_URL
+        "url": f"{LIVEKIT_SERVER_URL}/room/{interview_id}",  # URL LiveKit для подключения
         "token": token
     }
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
-
