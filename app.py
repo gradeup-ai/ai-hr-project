@@ -5,7 +5,6 @@ import jwt
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, SessionLocal
@@ -16,6 +15,7 @@ from google_sheets import save_interview_to_google_sheets
 from deepgram import Deepgram
 from openai import OpenAI
 from send_email import send_interview_email
+from fastapi.middleware.cors import CORSMiddleware
 
 # Инициализация FastAPI
 app = FastAPI(
@@ -24,14 +24,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Разрешение CORS
+# Разрешение CORS для фронтенда
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["https://ai-hr-frontend.onrender.com"],  # Добавляем ссылку на фронтенд
     allow_credentials=True,
-    allow_methods=["*"],  
-    allow_headers=["*"],  
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
 
 # API ключи
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
