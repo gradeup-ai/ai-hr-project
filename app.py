@@ -27,7 +27,7 @@ app = FastAPI(
 # Разрешение CORS для фронтенда
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ai-hr-frontend.onrender.com"],  # Разрешаем доступ только с фронтенда
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
