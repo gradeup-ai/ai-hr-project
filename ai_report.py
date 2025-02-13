@@ -143,4 +143,3 @@ def generate_report(interview_id: str):
         session.close()
 
     return report_text
-
